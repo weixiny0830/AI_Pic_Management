@@ -127,9 +127,9 @@ Photos/
 
 Approximate throughput (varies by image resolution and disk speed):
 
-RTX 3060: 200–300 images per second
-RTX 2060: 120–180 images per second
-GTX 1060: 80–120 images per second
+- RTX 3060: 200–300 images per second
+- RTX 2060: 120–180 images per second
+- GTX 1060: 80–120 images per second
 
 ------------------------------------------------------------
 ## NOTES AND WARNINGS
@@ -143,12 +143,12 @@ GTX 1060: 80–120 images per second
 ## LICENSE
 ------------------------------------------------------------
 
-MIT License
+- MIT License
 
 ------------------------------------------------------------
 ## CKNOWLEDGEMENTS
 ------------------------------------------------------------
 
-OpenAI CLIP
-PyTorch
-NVIDIA CUDA
+- OpenAI CLIP
+- PyTorch
+- NVIDIA CUDA
