@@ -60,14 +60,14 @@ for manual review.
 
 Run the following command in **PowerShell** or **Command Prompt**:
 
-```powershell
-nvidia-smi
+powershell
+`nvidia-smi`
 
 If your GPU information is displayed, the driver is correctly installed.
 
 ---
 
-## 2. Install PyTorch with CUDA Support (CUDA 11.8)
+### 2. Install PyTorch with CUDA Support (CUDA 11.8)
 
 Use **this exact command**:
 
@@ -84,17 +84,17 @@ True
 
 ------------------------------------------------------------
 
-## 3. Install remaining dependencies
+### 3. Install remaining dependencies
 
 `pip install pillow send2trash tqdm pillow-heif opencv-python`
 `pip install ftfy regex`
 `pip install git+https://github.com/openai/CLIP.git`
 
 ------------------------------------------------------------
-USAGE
+## USAGE
 ------------------------------------------------------------
 
-Basic usage:
+### 1. Basic usage:
 
 `python main.py --input "D:/Photos"`
 
@@ -104,7 +104,7 @@ Optional arguments:
 `- --dry-run (no file operations, classification only)`
 
 ------------------------------------------------------------
-OUTPUT STRUCTURE
+## OUTPUT STRUCTURE
 ------------------------------------------------------------
 
 Photos/
@@ -117,7 +117,7 @@ Photos/
 └── audit.log
 
 ------------------------------------------------------------
-PERFORMANCE
+## PERFORMANCE
 ------------------------------------------------------------
 
 Approximate throughput (varies by image resolution and disk speed):
@@ -127,7 +127,7 @@ RTX 2060: 120–180 images per second
 GTX 1060: 80–120 images per second
 
 ------------------------------------------------------------
-NOTES AND WARNINGS
+## NOTES AND WARNINGS
 ------------------------------------------------------------
 
 - Screenshots are moved to the Windows Recycle Bin and can be restored
@@ -135,13 +135,13 @@ NOTES AND WARNINGS
 - It is strongly recommended to run with --dry-run first on new datasets
 
 ------------------------------------------------------------
-LICENSE
+## LICENSE
 ------------------------------------------------------------
 
 MIT License
 
 ------------------------------------------------------------
-ACKNOWLEDGEMENTS
+## CKNOWLEDGEMENTS
 ------------------------------------------------------------
 
 OpenAI CLIP
