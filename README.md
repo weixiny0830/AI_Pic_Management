@@ -71,12 +71,14 @@ If your GPU information is displayed, the driver is correctly installed.
 
 Use **this exact command**:
 
-```powershell
+
+powershell
+```
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 ```
 Verify GPU availability:
 
-```import torch`
+```import torch
 print(torch.cuda.is_available())
 ```
 
