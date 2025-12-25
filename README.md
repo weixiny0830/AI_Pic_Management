@@ -71,13 +71,14 @@ If your GPU information is displayed, the driver is correctly installed.
 
 Use **this exact command**:
 
-`powershell`
-`pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118`
-
+```powershell
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+```
 Verify GPU availability:
 
-`import torch`
-`print(torch.cuda.is_available())`
+```import torch`
+print(torch.cuda.is_available())
+```
 
 The expected output is:
 True
@@ -85,28 +86,29 @@ True
 ------------------------------------------------------------
 
 ### 3. Install remaining dependencies
-
-`pip install pillow send2trash tqdm pillow-heif opencv-python`
-`pip install ftfy regex`
-`pip install git+https://github.com/openai/CLIP.git`
+```
+pip install pillow send2trash tqdm pillow-heif opencv-python
+pip install ftfy regex
+pip install git+https://github.com/openai/CLIP.git
+```
 
 ------------------------------------------------------------
 ## USAGE
 ------------------------------------------------------------
 
 ### 1. Basic usage:
-
-`python main.py --input "D:/Photos"`
+```
+python main.py --input "D:/Photos"
 
 Optional arguments:
-`- --review-dir review/`
-`- --log-file process.log`
-`- --dry-run (no file operations, classification only)`
-
+- --review-dir review/
+- --log-file process.log
+- --dry-run (no file operations, classification only)
+```
 ------------------------------------------------------------
 ## OUTPUT STRUCTURE
 ------------------------------------------------------------
-
+```
 Photos/
 ├── 2021/
 │   ├── 01/
@@ -115,7 +117,7 @@ Photos/
 ├── review/
 ├── screenshots.log
 └── audit.log
-
+```
 ------------------------------------------------------------
 ## PERFORMANCE
 ------------------------------------------------------------
