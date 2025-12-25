@@ -42,6 +42,7 @@ import traceback
 
 from PySide6.QtCore import QThread, Signal, Qt
 from PySide6.QtGui import QFont
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QPushButton, QFileDialog, QProgressBar,
@@ -61,6 +62,10 @@ def open_in_explorer(path: str) -> None:
     except Exception:
         pass
 
+def resource_path(relative_path: str) -> str:
+    if hasattr(sys, "_MEIPASS"):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath("."), relative_path)
 
 class Worker(QThread):
     """
@@ -129,7 +134,7 @@ class App(QWidget):
         root.addWidget(title)
 
         # Info line
-        info = QLabel(f"Engine device: {engine.DEVICE} (cuda_available={engine.torch.cuda.is_available()})")
+        info = QLabel(f"Device hint: {engine.get_device_str()} (cuda_available={engine.is_cuda_available()})")
         info.setTextInteractionFlags(Qt.TextSelectableByMouse)
         root.addWidget(info)
 
@@ -354,6 +359,10 @@ class App(QWidget):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    app.setWindowIcon(QIcon(resource_path("assets/icon.ico")))
+
     w = App()
+    w.setWindowIcon(QIcon(resource_path("assets/icon.ico")))
     w.show()
+
     sys.exit(app.exec())

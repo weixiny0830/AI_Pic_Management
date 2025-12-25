@@ -1,22 +1,25 @@
-# engine.py
-# Author: Chris Yang
+# engine.py (Lazy-Init / Fast UI Startup)
+# ============================================================
 # GPU-Accelerated Local Photo Manager (CLIP-Based)
-# Core engine (no UI), designed to be called from a UI (PySide6) or CLI.
 #
-# Key features:
-# - CLIP (GPU if available) screenshot scoring
-# - Screenshots -> Recycle Bin, photos/videos -> Year/Month folders, uncertain -> _AI_REVIEW
-# - CSV audit log
-# - Progress + log callbacks for UI
-# - Soft stop via StopFlag
+# Key upgrades vs. eager-init version:
+# - LAZY LOAD CLIP + CUDA: UI opens fast; model loads only when needed (first image scoring)
 # - Robust Windows path normalization (prevents mixed slash issues)
+# - Soft stop (StopFlag)
+# - Progress + log callbacks (for UI)
 # - Existence checks before processing each file
+# - CSV audit log
+#
+# Notes:
+# - First time you click "Start", CLIP will load (can take a few seconds).
+# - Subsequent runs in the same process are faster.
+# ============================================================
 
 import os
 import csv
 import shutil
 from datetime import datetime
-from typing import Callable, Optional, Dict, Set
+from typing import Callable, Optional, Dict, Set, Tuple
 
 import torch
 import clip
@@ -31,13 +34,6 @@ DEFAULT_IMAGE_EXT: Set[str] = {".jpg", ".jpeg", ".png", ".heic", ".gif"}
 DEFAULT_VIDEO_EXT: Set[str] = {".mp4", ".mov", ".avi", ".mkv", ".wmv", ".mts", ".m2ts"}
 DEFAULT_LOG_PREFIX = "_ai_organizer_log_"
 
-# Enable HEIC support (safe to call once at import time)
-pillow_heif.register_heif_opener()
-
-# Initialize CLIP once (GPU preferred)
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-MODEL, PREPROCESS = clip.load("ViT-B/32", device=DEVICE)
-
 # CLIP prompts: first 5 = screenshot-related
 TEXTS = [
     "a smartphone screenshot",
@@ -50,9 +46,11 @@ TEXTS = [
     "a portrait photo",
     "a landscape photo",
 ]
-TEXT_TOKENS = clip.tokenize(TEXTS).to(DEVICE)
 
 EXIF_TAGS = ExifTags.TAGS
+
+# Enable HEIC support
+pillow_heif.register_heif_opener()
 
 # ----------------------------
 # Types
@@ -62,7 +60,7 @@ ProgressCB = Optional[Callable[[int, int, str], None]]  # done, total, stage
 
 
 # ----------------------------
-# Helpers
+# Windows path normalization
 # ----------------------------
 def norm_win_path(p: str) -> str:
     """Normalize to absolute Windows-style path (prevents mixed slash bugs)."""
@@ -77,6 +75,47 @@ def now_str() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
+# ----------------------------
+# Lazy CLIP initialization
+# ----------------------------
+_DEVICE: Optional[str] = None
+_MODEL = None
+_PREPROCESS = None
+_TEXT_TOKENS = None
+
+
+def is_cuda_available() -> bool:
+    # Safe to call without initializing CLIP model.
+    try:
+        return bool(torch.cuda.is_available())
+    except Exception:
+        return False
+
+
+def get_clip_bundle() -> Tuple[str, object, object, object]:
+    """
+    Lazily initialize CLIP model & tokens.
+    Returns (device, model, preprocess, text_tokens).
+    """
+    global _DEVICE, _MODEL, _PREPROCESS, _TEXT_TOKENS
+    if _MODEL is None:
+        _DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+        _MODEL, _PREPROCESS = clip.load("ViT-B/32", device=_DEVICE)
+        _TEXT_TOKENS = clip.tokenize(TEXTS).to(_DEVICE)
+    return _DEVICE, _MODEL, _PREPROCESS, _TEXT_TOKENS
+
+
+def get_device_str() -> str:
+    """
+    Returns best-available device string without forcing CLIP to load.
+    Useful for UI header. (Final runtime device logged when model loads.)
+    """
+    return "cuda" if is_cuda_available() else "cpu"
+
+
+# ----------------------------
+# Media date + file ops
+# ----------------------------
 def get_media_date(path: str, image_ext: Set[str]) -> datetime:
     """
     Try EXIF DateTimeOriginal for images. Fallback to Windows file creation time.
@@ -99,14 +138,17 @@ def get_media_date(path: str, image_ext: Set[str]) -> datetime:
 @torch.no_grad()
 def clip_screenshot_score(image_path: str) -> float:
     """
-    Returns screenshot probability score (0–1). Higher means more likely to be a screenshot.
+    Returns screenshot probability score (0–1).
+    Higher means more likely to be a screenshot.
     """
     try:
-        img = Image.open(image_path).convert("RGB")
-        image_tensor = PREPROCESS(img).unsqueeze(0).to(DEVICE)
+        device, model, preprocess, text_tokens = get_clip_bundle()
 
-        image_feat = MODEL.encode_image(image_tensor)
-        text_feat = MODEL.encode_text(TEXT_TOKENS)
+        img = Image.open(image_path).convert("RGB")
+        image_tensor = preprocess(img).unsqueeze(0).to(device)
+
+        image_feat = model.encode_image(image_tensor)
+        text_feat = model.encode_text(text_tokens)
 
         probs = (image_feat @ text_feat.T).softmax(dim=-1)[0]
         return float(probs[:5].sum().item())
@@ -146,7 +188,7 @@ def is_in_target_folders(path: str, photos_dir: str, videos_dir: str, review_dir
 
 
 # ----------------------------
-# Stop flag (soft stop)
+# Soft stop
 # ----------------------------
 class StopFlag:
     def __init__(self):
@@ -190,7 +232,6 @@ def run_job(
     stop_flag allows soft stop.
     """
 
-    # Normalize paths to avoid mixed slash issues (Windows)
     root_dir = norm_win_path(root_dir)
 
     image_ext = image_ext or DEFAULT_IMAGE_EXT
@@ -219,8 +260,10 @@ def run_job(
     log_name = f"{log_prefix}{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
     log_path = os.path.join(root_dir, log_name)
 
-    log(f"CLIP device: {DEVICE} (cuda_available={torch.cuda.is_available()})")
+    # Important: do NOT force CLIP load here (keep startup fast).
+    # We only report CUDA availability. CLIP device will be logged on first image scoring.
     log(f"Root: {root_dir}")
+    log(f"CUDA available: {is_cuda_available()}")
     log("Scanning files...")
 
     # Scan files
@@ -256,6 +299,7 @@ def run_job(
         "csv_log": log_path,
         "dry_run": dry_run,
         "stopped": False,
+        "device_hint": get_device_str(),  # not forcing model load
         "images_total": len(image_files),
         "videos_total": len(video_files),
         "others_total": len(other_files),
@@ -282,6 +326,9 @@ def run_job(
         "dest_path",
         "error",
     ]
+
+    # To log the actual CLIP device once, the first time we score an image.
+    clip_device_logged = False
 
     with open(log_path, "w", newline="", encoding="utf-8-sig") as fcsv:
         writer = csv.DictWriter(fcsv, fieldnames=fieldnames)
@@ -357,7 +404,6 @@ def run_job(
                     target_dir = os.path.join(videos_dir, str(dt.year), dt.strftime("%Y-%m"))
 
                     if dry_run:
-                        dest = os.path.join(target_dir, os.path.basename(path))
                         log_row(path, "video", None, "video_moved", dest_path="DRY_RUN")
                     else:
                         dest = move_file(path, target_dir)
@@ -392,7 +438,13 @@ def run_job(
                     continue
 
                 try:
+                    # On first image scoring, CLIP will lazy-load here.
                     score = clip_screenshot_score(path)
+
+                    if not clip_device_logged:
+                        device, _, _, _ = get_clip_bundle()
+                        log(f"CLIP initialized on device: {device} (cuda_available={torch.cuda.is_available()})")
+                        clip_device_logged = True
 
                     if score >= screenshot_threshold:
                         if not dry_run:
