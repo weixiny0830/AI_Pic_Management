@@ -11,7 +11,7 @@ from tqdm import tqdm
 import pillow_heif
 
 # ================== CONFIGURATION (only change ROOT_DIR) ==================
-ROOT_DIR = r"D:\Pictures"   # Change to your root directory
+ROOT_DIR = r"D:\图片\Screenshots"   # Change to your root directory
 
 # Confidence thresholds
 SCREENSHOT_THRESHOLD = 0.80   # >= 0.80 → screenshot → Recycle Bin
