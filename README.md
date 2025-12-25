@@ -78,7 +78,8 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 ```
 Verify GPU availability:
 
-```import torch
+```
+import torch
 print(torch.cuda.is_available())
 ```
 
