@@ -12,10 +12,8 @@ This project uses OpenAI CLIP (PyTorch) to distinguish screenshots vs real photo
 This repository contains SOURCE CODE ONLY.
 You will build the Windows .exe yourself using PyInstaller.
 
-============================================================
-REPOSITORY LAYOUT
-============================================================
-
+## REPOSITORY LAYOUT
+```
 photo_manager/
 ├── app.py
 ├── engine.py
@@ -24,10 +22,9 @@ photo_manager/
 ├── assets/
 │   └── icon.ico
 └── README.txt
+```
 
-============================================================
-REQUIREMENTS
-============================================================
+## REQUIREMENTS
 
 Hardware:
 - NVIDIA GPU recommended (CUDA)
@@ -38,67 +35,65 @@ Software:
 - Python 3.9 or 3.10 (recommended)
 - Latest NVIDIA GPU driver (for CUDA)
 
-============================================================
-SETUP (DEVELOPER)
-============================================================
+## SETUP (DEVELOPER)
 
 1) Create virtual environment
 
+```
 cd path\to\photo_manager
 py -3.10 -m venv .venv
 .\.venv\Scripts\activate
 python -m pip install --upgrade pip
+```
 
 ------------------------------------------------------------
 
 2) Install PyTorch (CUDA 11.8 example)
 
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+`pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118`
 
 Verify:
-python -c "import torch; print(torch.cuda.is_available())"
+`python -c "import torch; print(torch.cuda.is_available())"`
 
 ------------------------------------------------------------
 
 3) Install remaining dependencies
 
+```
 pip install pillow send2trash tqdm pillow-heif opencv-python
 pip install ftfy regex
 pip install git+https://github.com/openai/CLIP.git
 pip install pyside6 pyinstaller
+```
 
-============================================================
-RUN FROM SOURCE
-============================================================
+## RUN FROM SOURCE
 
-python app.py
+`python app.py`
 
-============================================================
-BUILD WINDOWS EXE (ONEDIR)
-============================================================
+## BUILD WINDOWS EXE (ONEDIR)
 
 1) Clean previous builds
 
+```
 rmdir /s /q build
 rmdir /s /q dist
+```
 
 ------------------------------------------------------------
 
 2) Build
 
-pyinstaller PhotoManager.spec
+`pyinstaller PhotoManager.spec`
 
 ------------------------------------------------------------
 
 3) Output
 
-dist\PhotoManager\PhotoManager.exe
+`dist\PhotoManager\PhotoManager.exe`
 
 Do NOT move the exe out of its folder.
 
-============================================================
-HOW IT WORKS
-============================================================
+## HOW IT WORKS
 
 Images:
 - Screenshot → Recycle Bin
@@ -111,11 +106,9 @@ Videos:
 Other files:
 - Recycle Bin
 
-============================================================
-LOGS
-============================================================
+## LOGS
 
-_ai_organizer_log_YYYYMMDD_HHMMSS.csv
+`_ai_organizer_log_YYYYMMDD_HHMMSS.csv`
 
 Includes per-file:
 - path
@@ -125,24 +118,18 @@ Includes per-file:
 - destination
 - error (if any)
 
-============================================================
-SAFETY NOTES
-============================================================
+## SAFETY NOTES
 
 - Nothing is permanently deleted by default
 - Always review _AI_REVIEW before deleting
 - Screenshots can be restored from Recycle Bin
 
-============================================================
-LICENSE
-============================================================
+## LICENSE
 
 MIT License
 
-============================================================
-ACKNOWLEDGEMENTS
-============================================================
+## ACKNOWLEDGEMENTS
 
-OpenAI CLIP
-PyTorch
-NVIDIA CUDA
+- OpenAI CLIP
+- PyTorch
+- NVIDIA CUDA
