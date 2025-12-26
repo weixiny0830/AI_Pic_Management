@@ -110,27 +110,31 @@ dist/
     └── ...
 ```
 Run:
-'dist\PhotoManager\PhotoManager.exe
+```
+dist\PhotoManager\PhotoManager.exe
+```
 ⚠️ Do not move PhotoManager.exe out of the PhotoManager/ folder.
 
 ## How It Works
 ### Images
 - Screenshot (score ≥ screenshot threshold)
- - → Recycle Bin
+  → Recycle Bin
 - Uncertain (review threshold ≤ score < screenshot threshold)
- - → _AI_REVIEW/
+  → _AI_REVIEW/
 - Photo (score < review threshold)
- - → Photos/YYYY/YYYY-MM/
+  → Photos/YYYY/YYYY-MM/
 
 ### Videos
 - → Videos/YYYY/YYYY-MM/
 
 ### Other files
-- → Recycle Bin
+  → Recycle Bin
 
 ### Logs (CSV Audit Trail)
-- Each run generates a CSV log in the selected root folder:
-- '_ai_organizer_log_YYYYMMDD_HHMMSS.csv
+Each run generates a CSV log in the selected root folder:
+```
+_ai_organizer_log_YYYYMMDD_HHMMSS.csv
+```
 Columns include:
 - file_path
 - file_type
