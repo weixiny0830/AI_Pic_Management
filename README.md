@@ -1,143 +1,167 @@
 # GPU Photo Manager (CLIP-Based)
 
-An **AI-powered, GPU-accelerated Windows desktop application**  
-for automatically cleaning and organizing large local photo libraries.
+An **AI-powered, GPU-accelerated** tool for cleaning and organizing large local photo libraries on **Windows**.
 
-This app uses **OpenAI CLIP** to accurately distinguish **screenshots vs real photos**,  
-safely remove screenshots, and organize photos & videos by date.
+This project uses **OpenAI CLIP** (PyTorch) to distinguish **screenshots vs real photos**, then:
+- Screenshots → **Windows Recycle Bin** (recoverable)
+- Photos → `Photos/YYYY/YYYY-MM/`
+- Videos → `Videos/YYYY/YYYY-MM/`
+- Uncertain images → `_AI_REVIEW/`
+- Non-media files → **Recycle Bin**
 
-> ✔ Fully local & offline  
-> ✔ GPU accelerated (CUDA)  
-> ✔ No cloud upload  
-> ✔ All actions are logged and auditable  
+✅ Fully local/offline (no cloud upload)  
+✅ GPU acceleration via CUDA (when available)  
+✅ CSV audit log with per-file scores and decisions  
+
+> **Note:** This GitHub repo contains **source code only**.  
+> You will build the Windows `.exe` yourself using **PyInstaller**.
 
 ---
 
-## 🚀 Quick Start (Recommended)
-
-### 1. Download & Extract
-Download the release package and extract it anywhere on your computer.
-
-You will see a folder like:
-
+## Repository Layout
 ```
-PhotoManager/
-├── PhotoManager.exe
-├── torch/
-├── clip/
+photo_manager/
+├── app.py
+├── engine.py
+├── PhotoManager.spec
+├── version.txt
 ├── assets/
-└── ...
+│ └── icon.ico
+└── README.md
 ```
 
+---
 
-> ⚠️ Do **not** remove files inside this folder.
+## Requirements
+
+### Hardware
+- **NVIDIA GPU** recommended (CUDA)
+- CPU-only is supported but slower
+
+### Software
+- **Windows 10 / 11**
+- **Python 3.9 or 3.10** (recommended)
+  - Avoid Python 3.12+ for maximum PyTorch + PyInstaller compatibility
+- Latest NVIDIA driver (for GPU mode)
 
 ---
 
-### 2. Run the App
-Double-click: 'PhotoManager.exe
+## Setup (Developer)
 
+### 1) Create a virtual environment (recommended)
 
-That’s it.  
-No Python installation required.
+PowerShell:
 
----
+```powershell
+cd C:\path\to\photo_manager
+py -3.10 -m venv .venv
+.\.venv\Scripts\activate
+python -m pip install --upgrade pip
+```
 
-### 3. Choose a Photo Folder
-- Select the folder that contains your photos & videos
-- Click **Start**
-- The app will automatically process files
+### 2) Install PyTorch (CUDA 11.8 example)
 
----
+If you want GPU acceleration, install the CUDA build:
+```
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+```
 
-## 🧠 What the App Does
+Verify:
+```
+python -c "import torch; print(torch.cuda.is_available())"
+```
+Expected output:
+- True on a CUDA-capable machine with drivers installed
+- False is fine (CPU mode)
 
-### 📸 Images
-- **Screenshots**
-  - Detected by AI
-  - Moved to **Windows Recycle Bin** (recoverable)
-- **Real photos**
-  - Organized into:
-    ```
-    Photos/YYYY/YYYY-MM/
-    ```
-- **Uncertain images**
-  - Moved to:
-    ```
-    _AI_REVIEW/
-    ```
+### 3) Install remaining dependencies
+```
+pip install pillow send2trash tqdm pillow-heif opencv-python
+pip install ftfy regex
+pip install git+https://github.com/openai/CLIP.git
+pip install pyside6 pyinstaller
+```
 
-### 🎬 Videos
-- Organized into: 'Videos/YYYY/YYYY-MM/
+- Run From Source (Dev)
+'python app.py
 
-### 📄 Other files
-- Safely moved to **Recycle Bin**
+- Build the Windows EXE (onedir recommended)
+This project uses onedir packaging (a folder containing PhotoManager.exe + dependencies).
+This is the most reliable option for PyTorch apps.
 
----
+### 1) Clean previous builds
+````
+rmdir /s /q build
+rmdir /s /q dist
+````
 
-## 🖥 GPU Acceleration
+### 2) Build using the spec file
+'pyinstaller PhotoManager.spec
 
-- Automatically uses **NVIDIA GPU (CUDA)** if available
-- Falls back to CPU if no GPU is detected
-- GPU is initialized **lazily** (app opens fast)
+### 3) Output location
+After build completes:
+```
+dist/
+└── PhotoManager/
+    ├── PhotoManager.exe
+    ├── torch/
+    ├── clip/
+    ├── PySide6/
+    └── ...
+```
+Run:
+'dist\PhotoManager\PhotoManager.exe
+⚠️ Do not move PhotoManager.exe out of the PhotoManager/ folder.
 
-You will see a log message like:
-'CLIP initialized on device: cuda
+## How It Works
+### Images
+- Screenshot (score ≥ screenshot threshold)
+ - → Recycle Bin
+- Uncertain (review threshold ≤ score < screenshot threshold)
+ - → _AI_REVIEW/
+- Photo (score < review threshold)
+ - → Photos/YYYY/YYYY-MM/
 
----
+### Videos
+- → Videos/YYYY/YYYY-MM/
 
-## 🧾 Logs & Audit Trail
+### Other files
+- → Recycle Bin
 
-Every run generates a CSV log file in the selected folder: '_ai_organizer_log_YYYYMMDD_HHMMSS.csv
+### Logs (CSV Audit Trail)
+- Each run generates a CSV log in the selected root folder:
+- '_ai_organizer_log_YYYYMMDD_HHMMSS.csv
+Columns include:
+- file_path
+- file_type
+- clip_screenshot_score
+- decision
+- dest_path
+- error
 
+## Safety Notes
+- Nothing is permanently deleted by default
+- Screenshots & non-media files go to the Windows Recycle Bin
+- Always review _AI_REVIEW before deleting anything
 
-Each file record includes:
-- File path
-- File type
-- Screenshot probability score
-- Decision (moved / recycled / review)
-- Destination path
-- Errors (if any)
+## Troubleshooting
+### App starts slowly
+First image classification triggers lazy initialization of CLIP + CUDA.
+This is expected and keeps UI startup fast.
+### GPU not used
+Confirm GPU driver:
+'nvidia-smi
+Then confirm PyTorch CUDA:
+'python -c "import torch; print(torch.cuda.is_available())"
 
----
+### PyInstaller missing-module errors
+PyTorch packaging can require small spec tweaks depending on your torch version.
+Open an issue and include the full traceback + your pip freeze.
 
-## 🛑 Safety Notes
-
-- **Nothing is permanently deleted by default**
-- Screenshots & non-media files go to the **Recycle Bin**
-- Always review `_AI_REVIEW` before deleting
-- You can stop the process at any time
-
----
-
-## ⚙ System Requirements
-
-### Required
-- Windows 10 / Windows 11
-- NVIDIA GPU (recommended for speed)
-
-### Optional
-- CUDA-capable GPU for acceleration
-- CPU-only mode works but is slower
-
----
-
-## 📦 Distribution Notes
-
-This app is distributed as a **self-contained folder** (onedir).
-
-- Keep the entire `PhotoManager/` folder intact
-- You may create a desktop shortcut to `PhotoManager.exe`
-- Do not move the `.exe` out of its folder
-
----
-
-## 📜 License
+## License
 MIT License
 
----
-
-## 🙏 Acknowledgements
+## Acknowledgements
 - OpenAI CLIP
 - PyTorch
 - NVIDIA CUDA
