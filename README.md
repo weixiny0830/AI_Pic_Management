@@ -128,7 +128,7 @@ dist\PhotoManager\PhotoManager.exe
 - → Videos/YYYY/YYYY-MM/
 
 ### Other files
-  → Recycle Bin
+- → Recycle Bin
 
 ### Logs (CSV Audit Trail)
 Each run generates a CSV log in the selected root folder:
