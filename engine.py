@@ -18,6 +18,7 @@
 import os
 import csv
 import shutil
+import numpy as np
 from datetime import datetime
 from typing import Callable, Optional, Dict, Set, Tuple
 
@@ -36,14 +37,19 @@ DEFAULT_LOG_PREFIX = "_ai_organizer_log_"
 
 # CLIP prompts: first 5 = screenshot-related
 TEXTS = [
+    # Screenshot / UI-like (kept first on purpose)
     "a smartphone screenshot",
     "a chat app interface",
     "a webpage screenshot",
     "a document screenshot",
     "a computer screen interface",
+
+    # Real photos (these help reduce false positives on portraits/profile pics)
     "a real-life photograph",
     "a family photo",
     "a portrait photo",
+    "a profile picture",
+    "a selfie photo",
     "a landscape photo",
 ]
 
@@ -157,6 +163,49 @@ def clip_screenshot_score(image_path: str) -> float:
         return 0.0
 
 
+
+
+# ----------------------------
+# Blur detection (very blurry / unusable photos)
+# ----------------------------
+def _laplacian_variance(gray: np.ndarray) -> float:
+    """Return variance of Laplacian; lower means blurrier."""
+    # 2D Laplacian kernel
+    k = np.array([[0, 1, 0],
+                  [1, -4, 1],
+                  [0, 1, 0]], dtype=np.float32)
+    # Convolve (valid padding with edge replication)
+    padded = np.pad(gray.astype(np.float32), 1, mode="edge")
+    out = (
+        k[0,0]*padded[:-2,:-2] + k[0,1]*padded[:-2,1:-1] + k[0,2]*padded[:-2,2:] +
+        k[1,0]*padded[1:-1,:-2] + k[1,1]*padded[1:-1,1:-1] + k[1,2]*padded[1:-1,2:] +
+        k[2,0]*padded[2:,:-2] + k[2,1]*padded[2:,1:-1] + k[2,2]*padded[2:,2:]
+    )
+    return float(out.var())
+
+
+def blur_score(image_path: str, downsample_max: int = 800) -> float:
+    """
+    Compute a blur score (variance of Laplacian) using PIL + numpy.
+    Lower values => blurrier.
+    """
+    try:
+        img = Image.open(image_path).convert("L")  # grayscale
+        # Downsample for speed (preserve aspect ratio)
+        w, h = img.size
+        m = max(w, h)
+        if m > downsample_max and m > 0:
+            scale = downsample_max / float(m)
+            img = img.resize((max(1, int(w*scale)), max(1, int(h*scale))))
+        gray = np.asarray(img)
+        # Very small images are often icons/thumbnails; treat as not-blurry by default
+        if gray.size < 64 * 64:
+            return 1e9
+        return _laplacian_variance(gray)
+    except Exception:
+        # Corrupted/unreadable images are handled elsewhere; return "not blurry"
+        return 1e9
+
 def unique_target_path(target_dir: str, filename: str) -> str:
     base, ext = os.path.splitext(filename)
     candidate = os.path.join(target_dir, filename)
@@ -206,8 +255,10 @@ class StopFlag:
 # ----------------------------
 def run_job(
     root_dir: str,
+    mode: str = "screenshot",  # "screenshot" or "blurry"
     screenshot_threshold: float = 0.80,
     review_threshold: float = 0.60,
+    blur_threshold: float = 10.0,  # variance-of-laplacian; lower => blurrier
     dry_run: bool = False,
     skip_target_folders: bool = True,
     image_ext: Optional[Set[str]] = None,
@@ -220,6 +271,9 @@ def run_job(
     """
     Run the organizer/cleaner.
 
+    - mode:
+        - "screenshot": find non-photos / screenshots using CLIP
+        - "blurry": find very blurry unusable photos (variance-of-laplacian)
     - screenshot_threshold: >= this => screenshot => Recycle Bin
     - review_threshold: in [review_threshold, screenshot_threshold) => _AI_REVIEW
     - else => photo => Photos/YYYY/YYYY-MM
@@ -305,6 +359,9 @@ def run_job(
         "others_total": len(other_files),
         "skipped_total": len(skipped_files),
         "screenshots_to_trash": 0,
+        "blurry_to_trash": 0,
+        "blurry_threshold": blur_threshold,
+        "mode": mode,
         "images_to_review": 0,
         "photos_moved": 0,
         "videos_moved": 0,
@@ -321,7 +378,9 @@ def run_job(
         "timestamp",
         "file_path",
         "file_type",
+        "mode",
         "clip_screenshot_score",
+        "blur_score",
         "decision",
         "dest_path",
         "error",
@@ -334,12 +393,14 @@ def run_job(
         writer = csv.DictWriter(fcsv, fieldnames=fieldnames)
         writer.writeheader()
 
-        def log_row(file_path, file_type, score, decision, dest_path="", error=""):
+        def log_row(file_path, file_type, score, decision, dest_path="", error="", mode_val="", blur_val=None):
             writer.writerow({
                 "timestamp": now_str(),
                 "file_path": file_path,
                 "file_type": file_type,
+                "mode": mode_val,
                 "clip_screenshot_score": "" if score is None else f"{score:.6f}",
+                "blur_score": "" if blur_val is None else f"{float(blur_val):.6f}",
                 "decision": decision,
                 "dest_path": dest_path,
                 "error": error,
@@ -347,7 +408,7 @@ def run_job(
 
         # Log skipped files
         for p in skipped_files:
-            log_row(p, "skipped", None, "skipped", dest_path=os.path.dirname(p))
+            log_row(p, "skipped", None, "skipped", dest_path=os.path.dirname(p, mode_val=mode))
 
         # ----------------------------
         # 1) Other files -> Recycle Bin
@@ -361,7 +422,7 @@ def run_job(
 
             if not os.path.exists(path):
                 stats["errors"] += 1
-                log_row(path, "other", None, "missing", error="File not found")
+                log_row(path, "other", None, "missing", error="File not found", mode_val=mode)
                 log(f"SKIP missing file (other): {path}")
                 done += 1
                 progress(done, max(total_work, 1), "others")
@@ -371,10 +432,10 @@ def run_job(
                 if not dry_run:
                     send2trash(path)
                 stats["others_to_trash"] += 1
-                log_row(path, "other", None, "other_to_trash", dest_path=("RECYCLE_BIN" if not dry_run else "DRY_RUN"))
+                log_row(path, "other", None, "other_to_trash", dest_path=("RECYCLE_BIN" if not dry_run else "DRY_RUN"), mode_val=mode)
             except Exception as e:
                 stats["errors"] += 1
-                log_row(path, "other", None, "error", error=str(e))
+                log_row(path, "other", None, "error", error=str(e), mode_val=mode)
                 log(f"ERROR (other): {path} | {e}")
 
             done += 1
@@ -393,7 +454,7 @@ def run_job(
 
                 if not os.path.exists(path):
                     stats["errors"] += 1
-                    log_row(path, "video", None, "missing", error="File not found")
+                    log_row(path, "video", None, "missing", error="File not found", mode_val=mode)
                     log(f"SKIP missing file (video): {path}")
                     done += 1
                     progress(done, max(total_work, 1), "videos")
@@ -404,15 +465,15 @@ def run_job(
                     target_dir = os.path.join(videos_dir, str(dt.year), dt.strftime("%Y-%m"))
 
                     if dry_run:
-                        log_row(path, "video", None, "video_moved", dest_path="DRY_RUN")
+                        log_row(path, "video", None, "video_moved", dest_path="DRY_RUN", mode_val=mode)
                     else:
                         dest = move_file(path, target_dir)
-                        log_row(path, "video", None, "video_moved", dest_path=dest)
+                        log_row(path, "video", None, "video_moved", dest_path=dest, mode_val=mode)
 
                     stats["videos_moved"] += 1
                 except Exception as e:
                     stats["errors"] += 1
-                    log_row(path, "video", None, "error", error=str(e))
+                    log_row(path, "video", None, "error", error=str(e), mode_val=mode)
                     log(f"ERROR (video): {path} | {e}")
 
                 done += 1
@@ -422,7 +483,7 @@ def run_job(
         # 3) Images -> CLIP decision
         # ----------------------------
         if not stats["stopped"]:
-            log("AI screening images (CLIP GPU)...")
+            log(f"Processing images (mode={mode})...")
             for path in image_files:
                 if should_stop():
                     stats["stopped"] = True
@@ -431,11 +492,78 @@ def run_job(
 
                 if not os.path.exists(path):
                     stats["errors"] += 1
-                    log_row(path, "image", None, "missing", error="File not found")
+                    log_row(path, "image", None, "missing", error="File not found", mode_val=mode)
                     log(f"SKIP missing file (image): {path}")
                     done += 1
                     progress(done, max(total_work, 1), "images")
                     continue
+
+                try:
+                    if mode.lower() == "blurry":
+                        b = blur_score(path)
+                        if b < blur_threshold:
+                            if not dry_run:
+                                send2trash(path)
+                                log_row(path, "image", None, "blurry_to_trash", dest_path="RECYCLE_BIN", mode_val=mode, blur_val=b)
+                            else:
+                                log_row(path, "image", None, "blurry_to_trash", dest_path="DRY_RUN", mode_val=mode, blur_val=b)
+                            stats["blurry_to_trash"] += 1
+                        else:
+                            # keep + organize like normal photo
+                            dt = get_media_date(path, image_ext=image_ext)
+                            target_dir = os.path.join(photos_dir, str(dt.year), dt.strftime("%Y-%m"))
+
+                            if dry_run:
+                                log_row(path, "image", None, "photo_moved", dest_path="DRY_RUN", mode_val=mode, blur_val=b)
+                            else:
+                                dest = move_file(path, target_dir)
+                                log_row(path, "image", None, "photo_moved", dest_path=dest, mode_val=mode, blur_val=b)
+                            stats["photos_moved"] += 1
+
+                    else:
+                        # Default: screenshot / non-photo screening using CLIP
+                        score = clip_screenshot_score(path)
+
+                        if not clip_device_logged:
+                            device, _, _, _ = get_clip_bundle()
+                            log(f"CLIP initialized on device: {device} (cuda_available={torch.cuda.is_available()})")
+                            clip_device_logged = True
+
+                        if score >= screenshot_threshold:
+                            if not dry_run:
+                                send2trash(path)
+                                log_row(path, "image", score, "screenshot_to_trash", dest_path="RECYCLE_BIN", mode_val=mode)
+                            else:
+                                log_row(path, "image", score, "screenshot_to_trash", dest_path="DRY_RUN", mode_val=mode)
+                            stats["screenshots_to_trash"] += 1
+
+                        elif score >= review_threshold:
+                            if dry_run:
+                                log_row(path, "image", score, "review_moved", dest_path="DRY_RUN", mode_val=mode)
+                            else:
+                                dest = move_file(path, review_dir)
+                                log_row(path, "image", score, "review_moved", dest_path=dest, mode_val=mode)
+                            stats["images_to_review"] += 1
+
+                        else:
+                            dt = get_media_date(path, image_ext=image_ext)
+                            target_dir = os.path.join(photos_dir, str(dt.year), dt.strftime("%Y-%m"))
+
+                            if dry_run:
+                                log_row(path, "image", score, "photo_moved", dest_path="DRY_RUN", mode_val=mode)
+                            else:
+                                dest = move_file(path, target_dir)
+                                log_row(path, "image", score, "photo_moved", dest_path=dest, mode_val=mode)
+                            stats["photos_moved"] += 1
+
+                except Exception as e:
+                    stats["errors"] += 1
+                    log_row(path, "image", None, "error", error=str(e), mode_val=mode)
+                    log(f"ERROR (image): {path} | {e}")
+
+                done += 1
+                progress(done, max(total_work, 1), "images")
+                continue
 
                 try:
                     # On first image scoring, CLIP will lazy-load here.

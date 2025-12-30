@@ -46,7 +46,7 @@ from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QPushButton, QFileDialog, QProgressBar,
-    QPlainTextEdit, QLineEdit, QDoubleSpinBox, QCheckBox, QMessageBox
+    QPlainTextEdit, QLineEdit, QDoubleSpinBox, QCheckBox, QMessageBox, QComboBox
 )
 
 import engine
@@ -78,11 +78,13 @@ class Worker(QThread):
     sig_done = Signal(dict)        # final stats dict
     sig_failed = Signal(str)       # traceback / error message
 
-    def __init__(self, root_dir: str, ss_th: float, rv_th: float, dry_run: bool):
+    def __init__(self, root_dir: str, mode: str, ss_th: float, rv_th: float, blur_th: float, dry_run: bool):
         super().__init__()
         self.root_dir = root_dir
+        self.mode = mode
         self.ss_th = ss_th
         self.rv_th = rv_th
+        self.blur_th = blur_th
         self.dry_run = dry_run
         self.stop_flag = engine.StopFlag()
 
@@ -101,8 +103,10 @@ class Worker(QThread):
 
             stats = engine.run_job(
                 root_dir=self.root_dir,
+                mode=self.mode,
                 screenshot_threshold=self.ss_th,
                 review_threshold=self.rv_th,
+                blur_threshold=self.blur_th,
                 dry_run=self.dry_run,
                 stop_flag=self.stop_flag,
                 log_cb=log_cb,
@@ -153,6 +157,17 @@ class App(QWidget):
 
         row += 1
 
+        grid.addWidget(QLabel("Mode:"), row, 0)
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItems([
+            "1) Non-photo / Screenshot-like (CLIP)",
+            "2) Blurry / Unusable photos (Laplacian variance)",
+        ])
+        self.mode_combo.currentIndexChanged.connect(self.on_mode_changed)
+        grid.addWidget(self.mode_combo, row, 1)
+
+        row += 1
+
         grid.addWidget(QLabel("Screenshot Threshold:"), row, 0)
         self.ss_th = QDoubleSpinBox()
         self.ss_th.setRange(0.0, 1.0)
@@ -168,6 +183,15 @@ class App(QWidget):
         self.rv_th.setSingleStep(0.01)
         self.rv_th.setValue(0.60)
         grid.addWidget(self.rv_th, row, 1)
+
+        row += 1
+
+        grid.addWidget(QLabel("Blur Threshold (lower=blurrier):"), row, 0)
+        self.blur_th = QDoubleSpinBox()
+        self.blur_th.setRange(0.0, 10000.0)
+        self.blur_th.setSingleStep(1.0)
+        self.blur_th.setValue(25.0)
+        grid.addWidget(self.blur_th, row, 1)
 
         row += 1
 
@@ -236,6 +260,9 @@ class App(QWidget):
         self.lbl_status.setTextInteractionFlags(Qt.TextSelectableByMouse)
         root.addWidget(self.lbl_status)
 
+        # Init mode-dependent UI state
+        self.on_mode_changed()
+
     # ---------- UI Helpers ----------
     def append_log(self, msg: str) -> None:
         self.log_view.appendPlainText(msg)
@@ -244,9 +271,12 @@ class App(QWidget):
         self.btn_start.setEnabled(not running)
         self.btn_browse.setEnabled(not running)
         self.input_edit.setEnabled(not running)
+        # enable/disable based on mode
         self.ss_th.setEnabled(not running)
         self.rv_th.setEnabled(not running)
+        self.blur_th.setEnabled(not running)
         self.chk_dry_run.setEnabled(not running)
+        self.on_mode_changed()
         self.btn_stop.setEnabled(running)
 
     def enable_open_buttons(self, enabled: bool) -> None:
@@ -255,14 +285,30 @@ class App(QWidget):
         self.btn_open_photos.setEnabled(enabled)
         self.btn_open_videos.setEnabled(enabled)
 
+    def on_mode_changed(self):
+        """Enable/disable controls based on selected mode."""
+        idx = self.mode_combo.currentIndex() if hasattr(self, "mode_combo") else 0
+        is_screenshot = (idx == 0)
+
+        # Screenshot mode uses CLIP thresholds; blurry mode uses blur threshold.
+        self.ss_th.setEnabled(is_screenshot and self.btn_start.isEnabled())
+        self.rv_th.setEnabled(is_screenshot and self.btn_start.isEnabled())
+        self.blur_th.setEnabled((not is_screenshot) and self.btn_start.isEnabled())
+
+
     def validate_inputs(self) -> bool:
         root_dir = self.input_edit.text().strip()
         if not root_dir or not os.path.isdir(root_dir):
             QMessageBox.warning(self, "Invalid folder", "Please select a valid input folder.")
             return False
-        if self.rv_th.value() > self.ss_th.value():
+
+        idx = self.mode_combo.currentIndex()
+        is_screenshot = (idx == 0)
+
+        if is_screenshot and self.rv_th.value() > self.ss_th.value():
             QMessageBox.warning(self, "Invalid thresholds", "Review threshold must be <= Screenshot threshold.")
             return False
+
         return True
 
     # ---------- UI Callbacks ----------
@@ -276,8 +322,10 @@ class App(QWidget):
             return
 
         root_dir = self.input_edit.text().strip()
+        mode = "screenshot" if self.mode_combo.currentIndex() == 0 else "blurry"
         ss_th = float(self.ss_th.value())
         rv_th = float(self.rv_th.value())
+        blur_th = float(self.blur_th.value())
         dry_run = self.chk_dry_run.isChecked()
 
         # Reset UI
@@ -291,7 +339,7 @@ class App(QWidget):
         self.set_running(True)
 
         # Start worker thread
-        self.worker = Worker(root_dir=root_dir, ss_th=ss_th, rv_th=rv_th, dry_run=dry_run)
+        self.worker = Worker(root_dir=root_dir, mode=mode, ss_th=ss_th, rv_th=rv_th, blur_th=blur_th, dry_run=dry_run)
         self.worker.sig_log.connect(self.append_log)
         self.worker.sig_progress.connect(self.progress.setValue)
         self.worker.sig_stage.connect(lambda s: self.lbl_stage.setText(f"Stage: {s}"))
@@ -320,8 +368,10 @@ class App(QWidget):
             "Status: Done\n"
             f"Stopped: {stopped}\n"
             f"CSV: {csv_log}\n"
+            f"Mode: {stats.get('mode', '')} | "
             f"Photos moved: {stats.get('photos_moved', 0)} | "
             f"Screenshots: {stats.get('screenshots_to_trash', 0)} | "
+            f"Blurry trashed: {stats.get('blurry_to_trash', 0)} | "
             f"Review: {stats.get('images_to_review', 0)} | "
             f"Videos moved: {stats.get('videos_moved', 0)} | "
             f"Other trashed: {stats.get('others_to_trash', 0)} | "
