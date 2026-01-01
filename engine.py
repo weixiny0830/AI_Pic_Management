@@ -124,9 +124,15 @@ def get_device_str() -> str:
 # ----------------------------
 def get_media_date(path: str, image_ext: Set[str]) -> datetime:
     """
-    Try EXIF DateTimeOriginal for images. Fallback to Windows file creation time.
+    Get best-available media datetime.
+
+    Priority:
+    - Images: EXIF DateTimeOriginal -> Modified Time -> Created Time
+    - Videos/others: Modified Time -> Created Time
     """
     ext = os.path.splitext(path)[1].lower()
+
+    # Images: try EXIF first
     if ext in image_ext:
         try:
             img = Image.open(path)
@@ -138,6 +144,13 @@ def get_media_date(path: str, image_ext: Set[str]) -> datetime:
         except Exception:
             pass
 
+    # Fallback: Modified Time (most reliable across copies)
+    try:
+        return datetime.fromtimestamp(os.path.getmtime(path))
+    except Exception:
+        pass
+
+    # Last resort: Created Time
     return datetime.fromtimestamp(os.path.getctime(path))
 
 
